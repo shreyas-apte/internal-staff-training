@@ -4,6 +4,16 @@ from streamlit_option_menu import option_menu
 import pandas as pd
 from datetime import datetime
 import json
+import base64
+from io import BytesIO
+import av
+from streamlit_mic_recorder import mic_recorder
+import wave
+import numpy as np
+
+# Create necessary directories
+os.makedirs("recordings", exist_ok=True)
+os.makedirs("videos", exist_ok=True)
 
 # Page configuration
 st.set_page_config(
@@ -42,40 +52,54 @@ def admin_page():
     """Admin interface for uploading videos and questions"""
     st.title("Admin Dashboard")
     
-    with st.expander("Upload Training Video", expanded=False):
+    # Create tabs for different admin functions
+    tab1, tab2 = st.tabs(["Upload Video", "Manage Questions"])
+    
+    with tab1:
+        st.header("Upload Training Video")
         with st.form("video_upload"):
             video_title = st.text_input("Video Title")
             video_url = st.text_input("Video URL (YouTube/Vimeo)")
             video_file = st.file_uploader("Or upload video file", type=["mp4", "webm"])
             
             if st.form_submit_button("Save Video"):
-                # Save video details to database
-                with open(VIDEOS_DB, 'r') as f:
-                    videos = json.load(f)
-                
-                video_id = f"vid_{len(videos['videos']) + 1}"
-                videos['videos'].append({
-                    "id": video_id,
-                    "title": video_title,
-                    "url": video_url if video_url else None,
-                    "file_path": f"videos/{video_id}.mp4" if video_file else None,
-                    "questions": []
-                })
-                
-                # Save video file if uploaded
-                if video_file:
-                    os.makedirs("videos", exist_ok=True)
-                    with open(f"videos/{video_id}.mp4", "wb") as f:
-                        f.write(video_file.getbuffer())
-                
-                with open(VIDEOS_DB, 'w') as f:
-                    json.dump(videos, f)
-                st.success("Video saved successfully!")
+                if not video_title:
+                    st.error("Please enter a video title")
+                elif not (video_url or video_file):
+                    st.error("Please provide either a video URL or upload a video file")
+                else:
+                    # Save video details to database
+                    with open(VIDEOS_DB, 'r') as f:
+                        videos = json.load(f)
+                    
+                    video_id = f"vid_{len(videos['videos']) + 1}"
+                    video_data = {
+                        "id": video_id,
+                        "title": video_title,
+                        "url": video_url if video_url else None,
+                        "file_path": f"videos/{video_id}.mp4" if video_file else None,
+                        "questions": []
+                    }
+                    videos['videos'].append(video_data)
+                    
+                    # Save video file if uploaded
+                    if video_file:
+                        os.makedirs("videos", exist_ok=True)
+                        with open(f"videos/{video_id}.mp4", "wb") as f:
+                            f.write(video_file.getbuffer())
+                    
+                    with open(VIDEOS_DB, 'w') as f:
+                        json.dump(videos, f)
+                    st.success("Video saved successfully!")
     
-    # Add/edit questions for videos
-    with st.expander("Manage Quiz Questions", expanded=True):
+    with tab2:
+        st.header("Manage Quiz Questions")
         with open(VIDEOS_DB, 'r') as f:
             videos = json.load(f)
+        
+        if not videos['videos']:
+            st.warning("No videos available. Please upload a video first.")
+            return
         
         video_options = {v['id']: v['title'] for v in videos['videos']}
         selected_video = st.selectbox("Select Video", options=list(video_options.keys()), 
@@ -87,24 +111,41 @@ def admin_page():
             st.subheader(f"Questions for: {video['title']}")
             
             # Display existing questions
-            for i, q in enumerate(video['questions']):
-                with st.expander(f"Question {i+1}"):
-                    question = st.text_area(f"Question {i+1}", value=q['question'], key=f"q_{i}")
-                    answer = st.text_area(f"Answer {i+1}", value=q['answer'], key=f"a_{i}")
+            if 'questions' in video and video['questions']:
+                for i, q in enumerate(video['questions']):
+                    st.write(f"### Question {i+1}")
+                    question = st.text_area(f"Question {i+1}", 
+                                         value=q['question'], 
+                                         key=f"q_{selected_video}_{i}")
+                    answer = st.text_area(f"Answer {i+1}", 
+                                       value=q['answer'], 
+                                       key=f"a_{selected_video}_{i}")
                     
-                    if st.button(f"Update Question {i+1}"):
-                        video['questions'][i] = {
-                            "question": question,
-                            "answer": answer
-                        }
-                        with open(VIDEOS_DB, 'w') as f:
-                            json.dump(videos, f)
-                        st.success("Question updated!")
+                    col1, col2 = st.columns([1, 6])
+                    with col1:
+                        if st.button(f"Update Question {i+1}", key=f"update_{selected_video}_{i}"):
+                            video['questions'][i] = {
+                                "question": question,
+                                "answer": answer
+                            }
+                            with open(VIDEOS_DB, 'w') as f:
+                                json.dump(videos, f)
+                            st.success("Question updated!")
+                    with col2:
+                        if st.button(f"Delete Question {i+1}", key=f"delete_{selected_video}_{i}"):
+                            del video['questions'][i]
+                            with open(VIDEOS_DB, 'w') as f:
+                                json.dump(videos, f)
+                            st.success("Question deleted!")
+                            st.rerun()
+                    st.write("---")
+            else:
+                st.info("No questions added yet. Use the form below to add a new question.")
             
             # Add new question
             st.subheader("Add New Question")
-            new_question = st.text_area("New Question")
-            new_answer = st.text_area("Expected Answer")
+            new_question = st.text_area("New Question", key=f"new_q_{selected_video}")
+            new_answer = st.text_area("Expected Answer", key=f"new_a_{selected_video}")
             
             if st.button("Add Question") and new_question and new_answer:
                 if 'questions' not in video:
@@ -116,6 +157,7 @@ def admin_page():
                 with open(VIDEOS_DB, 'w') as f:
                     json.dump(videos, f)
                 st.success("Question added!")
+                st.rerun()
 
 def user_login():
     """User login/registration"""
@@ -219,6 +261,7 @@ def quiz_page():
         st.session_state.current_question = 0
         st.session_state.answers = {}
         st.session_state.quiz_complete = False
+        st.session_state.audio_frames = []
     
     current_q = st.session_state.current_question
     total_questions = len(video['questions'])
@@ -229,50 +272,70 @@ def quiz_page():
         st.subheader(f"Question {current_q + 1}/{total_questions}")
         st.write(question['question'])
         
-        # Voice recording component
+        # Audio recording section
         st.write("Record your answer:")
-        st.info("Click the microphone button to start/stop recording")
         
-        # This is a placeholder for the actual voice recording component
-        # In a real implementation, you would use a library like streamlit-webrtc
-        audio_data = st.audio("path/to/recorded/audio.wav")
+        # Create a unique key for the audio recorder
+        recorder_key = f"audio_recorder_{video_id}_{current_q}"
         
-        # Placeholder for transcription
-        transcribed_text = st.text_area("Transcribed answer (edit if needed):")
+        # Audio recorder component
+        st.write("Click the microphone to record your answer:")
+        audio_data = audio_recorder(key=recorder_key)
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("Submit Answer"):
-                if transcribed_text.strip():
-                    st.session_state.answers[current_q] = {
-                        'question': question['question'],
-                        'expected_answer': question['answer'],
-                        'user_answer': transcribed_text,
-                        'score': None,
-                        'feedback': None
-                    }
-                    
-                    # In a real implementation, you would call the AI here to evaluate the answer
-                    # For now, we'll just move to the next question
-                    
-                    if current_q < total_questions - 1:
-                        st.session_state.current_question += 1
+        # Display audio player if audio was recorded
+        if audio_data and 'audio_bytes' in audio_data:
+            st.audio(audio_data['audio_bytes'], format=audio_data['mime_type'].split('/')[-1])
+            
+            # The audio file is already saved by audio_recorder, just get the path
+            audio_path = audio_data['file_path']
+            
+            # Text area for the transcribed answer
+            transcribed_text = st.text_area(
+                "Transcribed answer (edit if needed):",
+                value="",
+                placeholder="Type or speak your answer...",
+                key=f"transcription_{current_q}"
+            )
+            
+            # Create columns for buttons
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Submit Answer"):
+                    if transcribed_text.strip():
+                        st.session_state.answers[current_q] = {
+                            'question': question['question'],
+                            'expected_answer': question['answer'],
+                            'user_answer': transcribed_text,
+                            'audio_path': audio_path,
+                            'score': None,
+                            'feedback': None
+                        }
+                        
+                        # Move to next question or complete quiz
+                        if current_q < total_questions - 1:
+                            st.session_state.current_question += 1
+                        else:
+                            st.session_state.quiz_complete = True
                         st.rerun()
                     else:
-                        st.session_state.quiz_complete = True
-                        st.rerun()
-                else:
-                    st.warning("Please record or type your answer")
-        
-        with col2:
+                        st.warning("Please type or record your answer")
+            
+            with col2:
+                if st.button("Rerecord"):
+                    # Clear the current recording
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    st.rerun()
+        else:
+            st.info("Click the microphone button to start recording your answer")
+            
             if st.button("Skip Question"):
                 if current_q < total_questions - 1:
                     st.session_state.current_question += 1
-                    st.rerun()
                 else:
                     st.session_state.quiz_complete = True
-                    st.rerun()
+                st.rerun()
     
     elif st.session_state.quiz_complete:
         st.success("Quiz Complete!")
@@ -343,6 +406,46 @@ def results_page():
             st.write(f"**Date Completed:** {row['timestamp']}")
             st.write(f"**Score:** {row['score']}%")
             st.write(f"**Feedback:** {row.get('feedback', 'No feedback available')}")
+
+def audio_recorder(key):
+    """
+    A simple audio recorder component using streamlit_mic_recorder
+    Returns audio data in bytes if recording is available, None otherwise
+    """
+    try:
+        # Display the recorder
+        audio_data = mic_recorder(
+            start_prompt="🎤 Record Answer",
+            stop_prompt="⏹️ Stop Recording",
+            just_once=True,
+            use_container_width=False,
+            format="webm",
+            key=key
+        )
+        
+        if audio_data:
+            # The audio data is a dictionary with 'bytes' and 'mime_type' keys
+            if isinstance(audio_data, dict) and 'bytes' in audio_data:
+                audio_bytes = audio_data['bytes']
+                mime_type = audio_data.get('mime_type', 'audio/webm')
+                
+                # Save the audio bytes to a file
+                temp_path = f"recordings/recording_{key}.webm"
+                with open(temp_path, "wb") as f:
+                    f.write(audio_bytes)
+                
+                # Return the file path and MIME type
+                return {
+                    'audio_bytes': audio_bytes,
+                    'mime_type': mime_type,
+                    'file_path': temp_path
+                }
+            
+        return None
+        
+    except Exception as e:
+        st.error(f"Error recording audio: {str(e)}")
+        return None
 
 def main():
     # Load data

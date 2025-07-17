@@ -1,0 +1,15 @@
+user_id,video_id,score,feedback,timestamp
+user_1,vid_2,0.0,Good job!,2025-07-17T02:44:21.958206
+user_1,vid_2,0.0,Good job!,2025-07-17T02:44:26.778510
+user_1,vid_2,0.0,Good job!,2025-07-17T02:48:33.354925
+user_1,vid_2,0.0,Good job!,2025-07-17T02:48:34.372905
+user_1,vid_1,0.0,Good job!,2025-07-17T02:52:50.369258
+user_1,vid_1,0.0,Good job!,2025-07-17T02:52:51.459647
+user_1,vid_2,0.0,Good job!,2025-07-17T02:53:12.179320
+user_1,vid_2,0.0,Good job!,2025-07-17T02:53:13.681732
+user_1,vid_1,0.0,Good job!,2025-07-17T03:01:31.641929
+user_1,vid_1,0.0,Good job!,2025-07-17T03:01:33.094868
+user_1,vid_2,0.0,Good job!,2025-07-17T03:02:17.823151
+user_1,vid_2,0.0,Good job!,2025-07-17T03:02:19.285468
+user_2,vid_1,0.0,Good job!,2025-07-17T03:08:37.558109
+user_2,vid_1,0.0,Good job!,2025-07-17T03:08:39.412361
